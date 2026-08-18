@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
-import { useApp } from '../../context/AppContext';
+import { getMyStartups } from '../../lib/startupApi';
 import { generateInsight, AI_CAPABILITIES } from '../../lib/aiApi';
 
 // Minimal stub -- no page existed for the backend AI module in the
@@ -11,9 +11,23 @@ import { generateInsight, AI_CAPABILITIES } from '../../lib/aiApi';
 // (task-prioritization/analytics-interpretation/report-explanation need
 // extra params -- projectId/section/reportType -- and are not wired here).
 export const AIInsightsPage = () => {
-  const { startups } = useApp();
+  const [startups, setStartups] = useState([]);
+  const [startupsError, setStartupsError] = useState('');
   const [startupId, setStartupId] = useState('');
   const [capability, setCapability] = useState(AI_CAPABILITIES[0].value);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const entries = await getMyStartups();
+        const list = Array.isArray(entries) ? entries : [];
+        setStartups(list);
+        setStartupId(list[0]?._id || list[0]?.id || '');
+      } catch (err) {
+        setStartupsError(err.message || 'Unable to load your startups.');
+      }
+    })();
+  }, []);
   const [question, setQuestion] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
@@ -56,11 +70,12 @@ export const AIInsightsPage = () => {
               onChange={(e) => setStartupId(e.target.value)}
               className="w-full bg-slate-50/80 border border-slate-200 text-sm rounded-xl px-3.5 h-11 text-slate-800"
             >
-              <option value="">Select a startup…</option>
+              <option value="">{startups.length ? 'Select a startup…' : 'No startups available'}</option>
               {startups.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+                <option key={s._id || s.id} value={s._id || s.id}>{s.name}</option>
               ))}
             </select>
+            {startupsError && <p className="text-xs text-red-600 mt-1">{startupsError}</p>}
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Capability</label>

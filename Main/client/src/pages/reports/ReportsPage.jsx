@@ -1,17 +1,31 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FileText } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { useApp } from '../../context/AppContext';
+import { getMyStartups } from '../../lib/startupApi';
 import { generateReport, REPORT_TYPES } from '../../lib/reportsApi';
 
 // Minimal stub -- no page existed for the backend Reports module in the
 // original design. Owner/Admin only on the backend; a contributor or
 // unrelated user will see the 403 message surfaced below, not a crash.
 export const ReportsPage = () => {
-  const { startups } = useApp();
+  const [startups, setStartups] = useState([]);
+  const [startupsError, setStartupsError] = useState('');
   const [startupId, setStartupId] = useState('');
   const [reportType, setReportType] = useState('startup');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const entries = await getMyStartups();
+        const list = Array.isArray(entries) ? entries : [];
+        setStartups(list);
+        setStartupId(list[0]?._id || list[0]?.id || '');
+      } catch (err) {
+        setStartupsError(err.message || 'Unable to load your startups.');
+      }
+    })();
+  }, []);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -50,11 +64,12 @@ export const ReportsPage = () => {
               onChange={(e) => setStartupId(e.target.value)}
               className="w-full bg-slate-50/80 border border-slate-200 text-sm rounded-xl px-3.5 h-11 text-slate-800"
             >
-              <option value="">Select a startup…</option>
+              <option value="">{startups.length ? 'Select a startup…' : 'No startups available'}</option>
               {startups.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+                <option key={s._id || s.id} value={s._id || s.id}>{s.name}</option>
               ))}
             </select>
+            {startupsError && <p className="text-xs text-red-600 mt-1">{startupsError}</p>}
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Report Type</label>
