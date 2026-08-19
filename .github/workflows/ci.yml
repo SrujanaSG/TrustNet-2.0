@@ -1,0 +1,68 @@
+name: CI
+
+# Runs the frontend build and the backend unit + integration suites on every
+# push to main and on every pull request. No secrets or deployment credentials
+# are used: the backend env values below are non-secret CI placeholders, and
+# the integration suite spins up its own in-memory MongoDB
+# (mongodb-memory-server), which overrides MONGO_URI at runtime.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  client-build:
+    name: Client build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Main/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Main/client/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  server-tests:
+    name: Server unit + integration
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Main/server
+    env:
+      # Non-secret placeholders so src/config/env.js's required-var check passes.
+      # These are NOT real credentials; the integration suite uses an in-memory
+      # MongoDB and never contacts Cloudinary/SMTP (delivery failures are
+      # swallowed and never block the primary action).
+      MONGO_URI: mongodb://127.0.0.1:27017/trustnet_ci
+      JWT_SECRET: ci-placeholder-secret-000000000000000000
+      JWT_ACCESS_SECRET: ci-placeholder-access-00000000000000000
+      JWT_REFRESH_SECRET: ci-placeholder-refresh-0000000000000000
+      JWT_EXPIRES_IN: 7d
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CLOUDINARY_CLOUD_NAME: ci-placeholder
+      CLOUDINARY_API_KEY: ci-placeholder
+      CLOUDINARY_API_SECRET: ci-placeholder
+      SMTP_HOST: smtp.example.com
+      SMTP_PORT: 587
+      SMTP_USER: ci-placeholder
+      SMTP_PASS: ci-placeholder
+      SMTP_FROM: TrustNet <no-reply@example.com>
+      TWO_FACTOR_ENCRYPTION_KEY: ci-placeholder-2fa-key-00000000000000
+      CLIENT_URL: http://localhost:5173
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Main/server/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:integration
