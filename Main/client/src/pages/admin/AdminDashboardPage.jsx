@@ -1,32 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  ShieldAlert, 
-  Users, 
-  Rocket, 
-  Check, 
-  X, 
-  ShieldCheck, 
-  BarChart3, 
-  Bell, 
-  Settings, 
-  FileText, 
-  Calendar, 
-  Briefcase, 
-  DollarSign, 
-  GraduationCap, 
-  Flag, 
-  HelpCircle, 
-  Activity, 
-  Lock, 
-  Plus, 
-  Search, 
-  Filter, 
-  Download, 
-  Eye, 
-  Trash2, 
-  Ban, 
+import {
+  ShieldAlert,
+  Users,
+  Rocket,
+  Check,
+  X,
+  ShieldCheck,
+  BarChart3,
+  Bell,
+  Settings,
+  FileText,
+  Briefcase,
+  DollarSign,
+  Flag,
+  Search,
+  Eye,
   RefreshCw,
-  Sparkles
+  Activity
 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
@@ -35,38 +25,20 @@ import { Input } from '../../components/ui/Input';
 import { Tabs } from '../../components/ui/Tabs';
 import { useApp } from '../../context/AppContext';
 import * as adminApi from '../../lib/adminApi';
-import { 
-  ResponsiveContainer, 
-  AreaChart, 
-  Area, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  CartesianGrid 
-} from 'recharts';
 
-const analyticsData = [
-  { month: 'Jan', users: 4200, revenue: 18400 },
-  { month: 'Feb', users: 6800, revenue: 24500 },
-  { month: 'Mar', users: 9500, revenue: 31200 },
-  { month: 'Apr', users: 12400, revenue: 38900 },
-  { month: 'May', users: 15100, revenue: 44200 },
-  { month: 'Jun', users: 18420, revenue: 52100 }
-];
-
-// Only Verification is wired to a real backend endpoint (see
-// docs/Technical_Documentation_v2.md §6/§9 -- the admin API surface is
-// verification-review only). Every other section below is a UI preview
-// with no corresponding backend model or route; this banner says so
-// instead of silently presenting fabricated numbers as live data.
-const DemoDataNotice = () => (
-  <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-xl border border-amber-200 text-[11px] font-semibold">
-    <ShieldAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
-    <span>Demo preview -- this section has no backend endpoint yet. Numbers and actions here are illustrative only.</span>
+// Sections whose backend route genuinely does not exist yet (broadcast,
+// reports/disputes, platform settings, system health, platform-wide
+// analytics). Rather than fabricate numbers, those sections render this
+// notice. Sections with a real endpoint (overview, users, startups,
+// verification, audit logs) are wired to live data below and never show it.
+const UnavailableNotice = ({ children }) => (
+  <div className="flex items-center gap-2 p-3 bg-slate-50 text-slate-600 rounded-xl border border-slate-200 text-[11px] font-semibold">
+    <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-amber-500" strokeWidth={1.75} />
+    <span>{children || 'No backend endpoint exists for this section yet, so it is intentionally left inactive.'}</span>
   </div>
 );
+
+const ROLE_OPTIONS = ['founder', 'entrepreneur', 'investor', 'client', 'mentor', 'builder', 'admin'];
 
 export const AdminDashboardPage = () => {
   const { showToast } = useApp();
@@ -74,32 +46,40 @@ export const AdminDashboardPage = () => {
   const [activeSection, setActiveSection] = useState('overview');
   const [managementSubTab, setManagementSubTab] = useState('users');
   const [contentSubTab, setContentSubTab] = useState('posts');
-  const [moderationSubTab, setModerationSubTab] = useState('reports');
-  const [settingsSubTab, setSettingsSubTab] = useState('roles-permissions');
+  const [settingsSubTab, setSettingsSubTab] = useState('audit-logs');
 
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Sample State Data
-  const [usersList, setUsersList] = useState([
-    { id: 'usr_1', name: 'Alex Morgan', email: 'alex@nexusai.io', role: 'Entrepreneur', status: 'Active', verified: true },
-    { id: 'usr_2', name: 'Sarah Chen', email: 'sarah@horizonvc.com', role: 'Investor', status: 'Active', verified: true },
-    { id: 'usr_3', name: 'Dr. Marcus Vance', email: 'marcus@mit.edu', role: 'Mentor', status: 'Active', verified: true },
-    { id: 'usr_4', name: 'Elena Rostova', email: 'elena@stanford.edu', role: 'Entrepreneur', status: 'Active', verified: false },
-    { id: 'usr_5', name: 'David Miller', email: 'david@paypulse.io', role: 'Entrepreneur', status: 'Suspended', verified: false }
-  ]);
+  // --- Overview (GET /admin/dashboard/overview) -------------------------
+  const [overview, setOverview] = useState(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [overviewError, setOverviewError] = useState('');
 
-  // Live data -- GET /api/v1/admin/verifications (the only admin capability
-  // with real backend support; see docs/Technical_Documentation_v2.md).
+  const loadOverview = useCallback(async () => {
+    setOverviewLoading(true);
+    setOverviewError('');
+    try {
+      setOverview(await adminApi.getOverview());
+    } catch (err) {
+      setOverviewError(err.message || 'Failed to load dashboard overview.');
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadOverview();
+  }, [loadOverview]);
+
+  // --- Verification queue (GET/POST /admin/verifications) ---------------
   const [verificationsQueue, setVerificationsQueue] = useState([]);
   const [verificationsLoading, setVerificationsLoading] = useState(true);
   const [verificationsError, setVerificationsError] = useState('');
   const [actioningId, setActioningId] = useState(null);
 
-  // Per-user document detail. The queue LIST only returns document
-  // summaries (type/status/uploadedAt, no URL, on purpose). The actual
-  // viewable files are short-lived signed Cloudinary URLs returned only by
-  // GET /admin/verifications/:id, so we fetch them on demand when the admin
-  // opens a request. { [userId]: { status, docs, error } }
+  // Per-user document detail. The queue LIST only returns document summaries
+  // (type/status/uploadedAt, no URL). Viewable files are short-lived signed
+  // URLs returned only by GET /admin/verifications/:id, fetched on demand.
   const [docDetail, setDocDetail] = useState({});
 
   const loadDocuments = useCallback(async (userId) => {
@@ -129,19 +109,93 @@ export const AdminDashboardPage = () => {
     loadVerifications();
   }, [loadVerifications]);
 
-  const [reportsList, setReportsList] = useState([
-    { id: 'rep_1', reporter: 'Alex Morgan', reported: 'Spam Pitch Bot', reason: 'Unsolicited mass DM pitches', date: 'Today' },
-    { id: 'rep_2', reporter: 'Sarah Chen', reported: 'Fake Deck Listing', reason: 'Copyrighted pitch slides', date: 'Yesterday' }
-  ]);
+  // --- User directory (GET /admin/users, role-filtered per sub-tab) -----
+  const [usersList, setUsersList] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState('');
+  const [userActioningId, setUserActioningId] = useState(null);
 
-  const [broadcastMessage, setBroadcastMessage] = useState('');
+  // investors/mentors sub-tabs reuse the same endpoint with a role filter;
+  // "users" shows everyone. "professionals" has no matching role.
+  const roleForSubTab = { users: undefined, investors: 'investor', mentors: 'mentor' };
 
+  const loadUsers = useCallback(async (role) => {
+    setUsersLoading(true);
+    setUsersError('');
+    try {
+      const result = await adminApi.listUsers(role ? { role } : {});
+      setUsersList(Array.isArray(result) ? result : []);
+    } catch (err) {
+      setUsersError(err.message || 'Failed to load users.');
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection !== 'management') return;
+    if (!Object.prototype.hasOwnProperty.call(roleForSubTab, managementSubTab)) return;
+    loadUsers(roleForSubTab[managementSubTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection, managementSubTab, loadUsers]);
+
+  // --- Startup moderation (GET /admin/startups) -------------------------
+  const [startupsList, setStartupsList] = useState([]);
+  const [startupsLoading, setStartupsLoading] = useState(false);
+  const [startupsError, setStartupsError] = useState('');
+  const [startupActioningId, setStartupActioningId] = useState(null);
+
+  const loadStartups = useCallback(async () => {
+    setStartupsLoading(true);
+    setStartupsError('');
+    try {
+      const result = await adminApi.listStartups();
+      setStartupsList(Array.isArray(result) ? result : []);
+    } catch (err) {
+      setStartupsError(err.message || 'Failed to load startups.');
+    } finally {
+      setStartupsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection === 'management' && managementSubTab === 'startups') {
+      loadStartups();
+    }
+  }, [activeSection, managementSubTab, loadStartups]);
+
+  // --- Audit log (GET /admin/activity-logs) -----------------------------
+  const [logsList, setLogsList] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState('');
+
+  const loadLogs = useCallback(async () => {
+    setLogsLoading(true);
+    setLogsError('');
+    try {
+      const result = await adminApi.listActivityLogs({ limit: 50 });
+      setLogsList(Array.isArray(result) ? result : []);
+    } catch (err) {
+      setLogsError(err.message || 'Failed to load audit logs.');
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection === 'settings' && settingsSubTab === 'audit-logs') {
+      loadLogs();
+    }
+  }, [activeSection, settingsSubTab, loadLogs]);
+
+  // --- Verification actions ---------------------------------------------
   const handleApproveVerification = async (userId, name) => {
     setActioningId(userId);
     try {
       await adminApi.approveVerification(userId);
-      setVerificationsQueue(prev => prev.filter(v => v._id !== userId));
+      setVerificationsQueue((prev) => prev.filter((v) => v._id !== userId));
       showToast('Identity Verified', `Approved badge for ${name}.`, 'success');
+      loadOverview();
     } catch (err) {
       showToast('Approval Failed', err.message || 'Could not approve this verification.', 'error');
     } finally {
@@ -154,8 +208,9 @@ export const AdminDashboardPage = () => {
     setActioningId(userId);
     try {
       await adminApi.rejectVerification(userId, reason);
-      setVerificationsQueue(prev => prev.filter(v => v._id !== userId));
+      setVerificationsQueue((prev) => prev.filter((v) => v._id !== userId));
       showToast('Verification Rejected', `Rejected submission for ${name}.`, 'info');
+      loadOverview();
     } catch (err) {
       showToast('Rejection Failed', err.message || 'Could not reject this verification.', 'error');
     } finally {
@@ -163,22 +218,57 @@ export const AdminDashboardPage = () => {
     }
   };
 
-  const handleToggleUserStatus = (userId) => {
-    setUsersList(prev => prev.map(u => {
-      if (u.id === userId) {
-        const nextStatus = u.status === 'Active' ? 'Suspended' : 'Active';
-        showToast('User Updated', `${u.name} is now ${nextStatus}.`, 'info');
-        return { ...u, status: nextStatus };
-      }
-      return u;
-    }));
+  // --- User actions ------------------------------------------------------
+  const handleToggleUserStatus = async (user) => {
+    const id = user._id;
+    const suspending = user.isActive;
+    setUserActioningId(id);
+    try {
+      const updated = suspending
+        ? await adminApi.suspendUser(id)
+        : await adminApi.reactivateUser(id);
+      setUsersList((prev) => prev.map((u) => (u._id === id ? { ...u, isActive: updated?.isActive ?? !suspending } : u)));
+      showToast('User Updated', `${user.fullName} is now ${suspending ? 'suspended' : 'active'}.`, 'info');
+    } catch (err) {
+      showToast('Update Failed', err.message || 'Could not update this user.', 'error');
+    } finally {
+      setUserActioningId(null);
+    }
   };
 
-  const handleBroadcastNotification = (e) => {
-    e.preventDefault();
-    if (!broadcastMessage.trim()) return;
-    showToast('Broadcast Sent', `Sent announcement to all 18,420 users.`, 'success');
-    setBroadcastMessage('');
+  const handleChangeRole = async (user) => {
+    const role = window.prompt(
+      `New role for ${user.fullName} (one of: ${ROLE_OPTIONS.join(', ')}):`,
+      user.role
+    );
+    if (!role || role === user.role) return;
+    setUserActioningId(user._id);
+    try {
+      const updated = await adminApi.changeUserRole(user._id, role.trim());
+      setUsersList((prev) => prev.map((u) => (u._id === user._id ? { ...u, role: updated?.role ?? role.trim() } : u)));
+      showToast('Role Updated', `${user.fullName} is now ${updated?.role ?? role.trim()}.`, 'success');
+    } catch (err) {
+      showToast('Role Change Failed', err.message || 'Could not change this role.', 'error');
+    } finally {
+      setUserActioningId(null);
+    }
+  };
+
+  // --- Startup actions ---------------------------------------------------
+  const handleSuspendStartup = async (startup) => {
+    const reason = window.prompt(`Reason for suspending "${startup.name}" (optional):`) || undefined;
+    setStartupActioningId(startup._id);
+    try {
+      await adminApi.suspendStartup(startup._id, reason);
+      // The list only holds active startups, so a suspended one drops out.
+      setStartupsList((prev) => prev.filter((s) => s._id !== startup._id));
+      showToast('Startup Suspended', `${startup.name} has been suspended.`, 'info');
+      loadOverview();
+    } catch (err) {
+      showToast('Suspend Failed', err.message || 'Could not suspend this startup.', 'error');
+    } finally {
+      setStartupActioningId(null);
+    }
   };
 
   const sectionTabs = [
@@ -186,11 +276,17 @@ export const AdminDashboardPage = () => {
     { id: 'management', label: 'Management', icon: Users },
     { id: 'verification', label: 'Verification', icon: ShieldCheck, badge: verificationsQueue.length },
     { id: 'content', label: 'Content', icon: FileText },
-    { id: 'moderation', label: 'Moderation', icon: Flag, badge: reportsList.length },
+    { id: 'moderation', label: 'Moderation', icon: Flag },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
+
+  const totals = overview?.totals;
+  const filteredUsers = usersList.filter((u) => {
+    const q = searchQuery.toLowerCase();
+    return (u.fullName || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
+  });
 
   return (
     <div className="space-y-8 max-w-[1440px] mx-auto pb-16">
@@ -219,59 +315,105 @@ export const AdminDashboardPage = () => {
         <Tabs tabs={sectionTabs} activeTab={activeSection} onChange={setActiveSection} />
       </Card>
 
-      {/* 1. OVERVIEW SECTION */}
+      {/* 1. OVERVIEW SECTION -- live totals from GET /admin/dashboard/overview */}
       {activeSection === 'overview' && (
         <div className="space-y-8">
-          <DemoDataNotice />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="p-6 border-slate-200/80 hoverEffect">
-              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Total Ecosystem Users</span>
-              <h3 className="text-3xl font-black text-slate-900 mt-2">18,420</h3>
-              <span className="text-xs text-emerald-600 font-semibold mt-2 block">+14% growth this month</span>
-            </Card>
-
-            <Card className="p-6 border-slate-200/80 hoverEffect">
-              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Verified Startups</span>
-              <h3 className="text-3xl font-black text-emerald-600 mt-2">1,240</h3>
-              <span className="text-xs text-slate-500 mt-2 block">$50M+ total capital raised</span>
-            </Card>
-
-            <Card className="p-6 border-slate-200/80 hoverEffect">
-              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Pending Verification</span>
-              <h3 className="text-3xl font-black text-amber-600 mt-2">{verificationsQueue.length} Queue</h3>
-              <span className="text-xs text-amber-600 font-semibold mt-2 block">Requires manual audit</span>
-            </Card>
-
-            <Card className="p-6 border-slate-200/80 hoverEffect">
-              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">System Health Uptime</span>
-              <h3 className="text-3xl font-black text-emerald-600 mt-2">99.98%</h3>
-              <span className="text-xs text-emerald-600 font-semibold mt-2 block">All systems operational</span>
-            </Card>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-slate-900">Platform Overview</h3>
+            <Button variant="outline" size="sm" onClick={loadOverview} disabled={overviewLoading}>
+              <RefreshCw className={`w-3.5 h-3.5 ${overviewLoading ? 'animate-spin' : ''}`} strokeWidth={1.75} />
+            </Button>
           </div>
 
-          <Card className="p-6 border-slate-200/80 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">User Growth & Ecosystem Revenue</h3>
-            <div className="h-72 w-full pt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={analyticsData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                  <XAxis dataKey="month" stroke="#6b7280" />
-                  <YAxis stroke="#6b7280" />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="users" stroke="#10b981" fill="#10b981" fillOpacity={0.15} />
-                </AreaChart>
-              </ResponsiveContainer>
+          {overviewLoading && (
+            <div className="p-6 text-center text-xs text-slate-500">Loading platform totals…</div>
+          )}
+
+          {!overviewLoading && overviewError && (
+            <div className="p-4 bg-rose-50 text-rose-600 rounded-xl border border-rose-200 text-xs font-medium flex items-center justify-between gap-3">
+              <span>{overviewError}</span>
+              <button type="button" onClick={loadOverview} className="font-semibold hover:underline shrink-0">Retry</button>
             </div>
-          </Card>
+          )}
+
+          {!overviewLoading && !overviewError && totals && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card className="p-6 border-slate-200/80 hoverEffect">
+                  <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Total Users</span>
+                  <h3 className="text-3xl font-black text-slate-900 mt-2">{totals.users.toLocaleString()}</h3>
+                  <span className="text-xs text-emerald-600 font-semibold mt-2 block">{totals.verifiedUsers.toLocaleString()} verified</span>
+                </Card>
+
+                <Card className="p-6 border-slate-200/80 hoverEffect">
+                  <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Startups</span>
+                  <h3 className="text-3xl font-black text-emerald-600 mt-2">{totals.startups.toLocaleString()}</h3>
+                  <span className="text-xs text-slate-500 mt-2 block">{totals.fundingRounds.toLocaleString()} funding rounds</span>
+                </Card>
+
+                <Card className="p-6 border-slate-200/80 hoverEffect">
+                  <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Pending Verification</span>
+                  <h3 className="text-3xl font-black text-amber-600 mt-2">{totals.pendingVerifications.toLocaleString()}</h3>
+                  <span className="text-xs text-amber-600 font-semibold mt-2 block">Requires manual audit</span>
+                </Card>
+
+                <Card className="p-6 border-slate-200/80 hoverEffect">
+                  <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Communities</span>
+                  <h3 className="text-3xl font-black text-slate-900 mt-2">{totals.communities.toLocaleString()}</h3>
+                  <span className="text-xs text-slate-500 mt-2 block">{totals.posts.toLocaleString()} posts</span>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-4">
+                <Card className="p-4 border-slate-200/80">
+                  <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Jobs</span>
+                  <h4 className="text-xl font-black text-slate-900 mt-1">{totals.jobs.toLocaleString()}</h4>
+                </Card>
+                <Card className="p-4 border-slate-200/80">
+                  <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Marketplace Listings</span>
+                  <h4 className="text-xl font-black text-slate-900 mt-1">{totals.marketplaceListings.toLocaleString()}</h4>
+                </Card>
+                <Card className="p-4 border-slate-200/80">
+                  <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Funding Rounds</span>
+                  <h4 className="text-xl font-black text-slate-900 mt-1">{totals.fundingRounds.toLocaleString()}</h4>
+                </Card>
+              </div>
+
+              <Card className="p-6 border-slate-200/80 space-y-4">
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-emerald-500" strokeWidth={1.75} />
+                  Recent Activity
+                </h3>
+                {(overview.recentActivity || []).length === 0 ? (
+                  <p className="text-xs text-slate-500">No recorded admin activity yet.</p>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {(overview.recentActivity || []).map((log) => (
+                      <div key={log._id} className="py-3 flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-bold text-slate-900">{log.action}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {log.actor?.fullName || 'System'} • {log.targetType || 'n/a'}
+                          </p>
+                        </div>
+                        <span className="text-[11px] text-slate-400">
+                          {log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </>
+          )}
         </div>
       )}
 
-      {/* 2. MANAGEMENT SECTION -- no GET /users list-all endpoint exists on
-          the backend (only GET /users/:id), so this whole section is a
-          UI preview, not real data. */}
+      {/* 2. MANAGEMENT SECTION -- users/investors/mentors via GET /admin/users
+          (role-filtered), startups via GET /admin/startups. Professionals has
+          no matching backend role, so it is left inactive. */}
       {activeSection === 'management' && (
         <div className="space-y-6">
-          <DemoDataNotice />
           {/* Sub-tabs bar */}
           <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto">
             {[
@@ -280,7 +422,7 @@ export const AdminDashboardPage = () => {
               { id: 'investors', label: 'Investors', icon: DollarSign },
               { id: 'mentors', label: 'Mentors', icon: Users },
               { id: 'professionals', label: 'Professionals', icon: Briefcase }
-            ].map(sub => {
+            ].map((sub) => {
               const Icon = sub.icon;
               return (
                 <button
@@ -299,83 +441,151 @@ export const AdminDashboardPage = () => {
             })}
           </div>
 
-          {/* USERS SUB-TAB */}
-          {managementSubTab === 'users' && (
+          {/* USERS / INVESTORS / MENTORS SUB-TABS (real, role-filtered) */}
+          {['users', 'investors', 'mentors'].includes(managementSubTab) && (
             <Card className="p-6 border-slate-200/80 space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">User Management Directory</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Search, filter roles, assign verification, or suspend accounts.</p>
+                  <h3 className="text-lg font-bold text-slate-900 capitalize">
+                    {managementSubTab === 'users' ? 'User Management Directory' : `${managementSubTab} Directory`}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Search, change roles, or suspend / reactivate accounts.</p>
                 </div>
 
                 <div className="flex items-center gap-3">
                   <Input
                     icon={Search}
-                    placeholder="Search users by name or email..."
+                    placeholder="Search by name or email…"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-64"
                   />
-                  <Button variant="primary" size="sm">
-                    <Plus className="w-4 h-4" strokeWidth={1.75} />
-                    <span>Add User</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => loadUsers(roleForSubTab[managementSubTab])}
+                    disabled={usersLoading}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${usersLoading ? 'animate-spin' : ''}`} strokeWidth={1.75} />
                   </Button>
                 </div>
               </div>
 
-              <div className="divide-y divide-slate-100">
-                {usersList
-                  .filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map((user) => (
-                    <div key={user.id} className="py-4 flex items-center justify-between gap-4">
+              {usersLoading && <div className="p-6 text-center text-xs text-slate-500">Loading users…</div>}
+
+              {!usersLoading && usersError && (
+                <div className="p-4 bg-rose-50 text-rose-600 rounded-xl border border-rose-200 text-xs font-medium flex items-center justify-between gap-3">
+                  <span>{usersError}</span>
+                  <button type="button" onClick={() => loadUsers(roleForSubTab[managementSubTab])} className="font-semibold hover:underline shrink-0">Retry</button>
+                </div>
+              )}
+
+              {!usersLoading && !usersError && filteredUsers.length === 0 && (
+                <div className="p-6 text-center text-xs text-slate-500">No users match this view.</div>
+              )}
+
+              {!usersLoading && !usersError && filteredUsers.length > 0 && (
+                <div className="divide-y divide-slate-100">
+                  {filteredUsers.map((user) => (
+                    <div key={user._id} className="py-4 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-700 text-xs">
-                          {user.name.charAt(0)}
+                          {(user.fullName || '?').charAt(0)}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className="text-xs font-bold text-slate-900">{user.name}</h4>
-                            {user.verified && <Badge variant="emerald" size="sm">Verified</Badge>}
+                            <h4 className="text-xs font-bold text-slate-900">{user.fullName}</h4>
+                            {user.isVerified && <Badge variant="emerald" size="sm">Verified</Badge>}
                           </div>
                           <p className="text-[11px] text-slate-500">{user.email} • Role: {user.role}</p>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <Badge variant={user.status === 'Active' ? 'emerald' : 'rose'}>{user.status}</Badge>
+                        <Badge variant={user.isActive ? 'emerald' : 'rose'}>{user.isActive ? 'Active' : 'Suspended'}</Badge>
                         <Button
-                          variant={user.status === 'Active' ? 'outline' : 'primary'}
+                          variant="outline"
                           size="sm"
-                          onClick={() => handleToggleUserStatus(user.id)}
+                          isLoading={userActioningId === user._id}
+                          onClick={() => handleChangeRole(user)}
                         >
-                          {user.status === 'Active' ? 'Suspend' : 'Activate'}
+                          Role
+                        </Button>
+                        <Button
+                          variant={user.isActive ? 'outline' : 'primary'}
+                          size="sm"
+                          isLoading={userActioningId === user._id}
+                          onClick={() => handleToggleUserStatus(user)}
+                        >
+                          {user.isActive ? 'Suspend' : 'Activate'}
                         </Button>
                       </div>
                     </div>
                   ))}
-              </div>
+                </div>
+              )}
             </Card>
           )}
 
-          {/* STARTUPS SUB-TAB */}
+          {/* STARTUPS SUB-TAB (real) */}
           {managementSubTab === 'startups' && (
-            <Card className="p-6 border-slate-200/80 space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">Startup Moderation & Cap Table Audit</h3>
-              <p className="text-xs text-slate-500">Audit published pitch decks and funding targets.</p>
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-700">
-                1,240 verified startups indexed in database. 0 pending flag reports.
+            <Card className="p-6 border-slate-200/80 space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Startup Moderation</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Active, published startups. Suspending one removes it from the public listing.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={loadStartups} disabled={startupsLoading}>
+                  <RefreshCw className={`w-3.5 h-3.5 ${startupsLoading ? 'animate-spin' : ''}`} strokeWidth={1.75} />
+                </Button>
               </div>
+
+              {startupsLoading && <div className="p-6 text-center text-xs text-slate-500">Loading startups…</div>}
+
+              {!startupsLoading && startupsError && (
+                <div className="p-4 bg-rose-50 text-rose-600 rounded-xl border border-rose-200 text-xs font-medium flex items-center justify-between gap-3">
+                  <span>{startupsError}</span>
+                  <button type="button" onClick={loadStartups} className="font-semibold hover:underline shrink-0">Retry</button>
+                </div>
+              )}
+
+              {!startupsLoading && !startupsError && startupsList.length === 0 && (
+                <div className="p-6 text-center text-xs text-slate-500">No active startups indexed.</div>
+              )}
+
+              {!startupsLoading && !startupsError && startupsList.length > 0 && (
+                <div className="divide-y divide-slate-100">
+                  {startupsList.map((startup) => (
+                    <div key={startup._id} className="py-4 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-bold text-slate-900">{startup.name}</h4>
+                          {startup.stage && <Badge variant="slate" size="sm">{startup.stage}</Badge>}
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{startup.tagline || 'No tagline'}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        isLoading={startupActioningId === startup._id}
+                        onClick={() => handleSuspendStartup(startup)}
+                      >
+                        Suspend
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
           )}
 
-          {/* INVESTORS, MENTORS, PROFESSIONALS SUB-TABS */}
-          {['investors', 'mentors', 'professionals'].includes(managementSubTab) && (
+          {/* PROFESSIONALS SUB-TAB (no matching backend role) */}
+          {managementSubTab === 'professionals' && (
             <Card className="p-6 border-slate-200/80 space-y-4">
-              <h3 className="text-lg font-bold text-slate-900 capitalize">{managementSubTab} Management</h3>
-              <p className="text-xs text-slate-500">Manage accreditation, ratings, and professional profiles.</p>
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-700">
-                All records verified and active.
-              </div>
+              <h3 className="text-lg font-bold text-slate-900">Professionals</h3>
+              <UnavailableNotice>
+                There is no distinct &quot;professional&quot; role in the backend user model, so this tab has no data source. Use the Users Directory and filter by role instead.
+              </UnavailableNotice>
             </Card>
           )}
         </div>
@@ -493,17 +703,18 @@ export const AdminDashboardPage = () => {
         </Card>
       )}
 
-      {/* 4. CONTENT SECTION -- no content-moderation model/route exists. */}
+      {/* 4. CONTENT SECTION -- there is a per-item moderation route
+          (POST /admin/content/:type/:id/moderate) but no admin endpoint that
+          LISTS content, so there is nothing to enumerate here. */}
       {activeSection === 'content' && (
         <div className="space-y-6">
-          <DemoDataNotice />
           <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto">
             {[
               { id: 'posts', label: 'Posts & Feed' },
               { id: 'events', label: 'Events' },
               { id: 'partnerships', label: 'Partnerships' },
               { id: 'featured-content', label: 'Featured Content' }
-            ].map(sub => (
+            ].map((sub) => (
               <button
                 key={sub.id}
                 onClick={() => setContentSubTab(sub.id)}
@@ -520,117 +731,59 @@ export const AdminDashboardPage = () => {
 
           <Card className="p-6 border-slate-200/80 space-y-4">
             <h3 className="text-lg font-bold text-slate-900 capitalize">{contentSubTab.replace('-', ' ')} Management</h3>
-            <p className="text-xs text-slate-500">Manage feed posts, event approvals, and landing page showcases.</p>
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-700">
-              Content pipeline active. 0 pending approvals.
-            </div>
+            <UnavailableNotice>
+              The backend can moderate a known item (hide / restore / delete) but exposes no endpoint to LIST content for review, so there is nothing to enumerate here yet.
+            </UnavailableNotice>
           </Card>
         </div>
       )}
 
-      {/* 5. MODERATION SECTION -- no report/dispute model exists. */}
+      {/* 5. MODERATION SECTION -- no report/dispute model or route exists. */}
       {activeSection === 'moderation' && (
-        <div className="space-y-6">
-          <DemoDataNotice />
-          <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3">
-            <button
-              onClick={() => setModerationSubTab('reports')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold min-h-[40px] ${
-                moderationSubTab === 'reports' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              Reports ({reportsList.length})
-            </button>
-            <button
-              onClick={() => setModerationSubTab('support')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold min-h-[40px] ${
-                moderationSubTab === 'support' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              Support Tickets
-            </button>
-          </div>
-
-          {moderationSubTab === 'reports' && (
-            <Card className="p-6 border-slate-200/80 space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">User Dispute & Report Queue</h3>
-              <div className="space-y-3 pt-2">
-                {reportsList.map((rep) => (
-                  <div key={rep.id} className="p-4 rounded-xl border border-slate-200/80 bg-slate-50/80 flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">Reported: {rep.reported}</h4>
-                      <p className="text-[11px] text-slate-500">By: {rep.reporter} • Reason: {rep.reason}</p>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => showToast('Report Resolved', 'Dismissed report item.', 'info')}>
-                      Dismiss
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-        </div>
+        <Card className="p-6 border-slate-200/80 space-y-4">
+          <h3 className="text-lg font-bold text-slate-900">User Dispute & Report Queue</h3>
+          <UnavailableNotice>
+            No reports / disputes model exists on the backend, so there is no queue to load.
+          </UnavailableNotice>
+        </Card>
       )}
 
-      {/* 6. ANALYTICS SECTION -- this is platform-wide admin analytics,
-          distinct from the real per-startup Analytics module (see
-          AnalyticsPage.jsx / GET /api/v1/analytics); no admin-wide
-          analytics endpoint exists. */}
+      {/* 6. ANALYTICS SECTION -- the real analytics module is per-startup
+          (AnalyticsPage.jsx / GET /api/v1/analytics). There is no
+          admin-wide time-series analytics endpoint; platform totals live in
+          the Overview tab. */}
       {activeSection === 'analytics' && (
         <Card className="p-6 border-slate-200/80 space-y-4">
-          <DemoDataNotice />
           <h3 className="text-lg font-bold text-slate-900">Ecosystem Platform Analytics</h3>
-          <div className="h-80 w-full pt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={analyticsData}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                <XAxis dataKey="month" stroke="#6b7280" />
-                <YAxis stroke="#6b7280" />
-                <Tooltip />
-                <Bar dataKey="revenue" fill="#10b981" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <UnavailableNotice>
+            There is no admin-wide analytics endpoint. Live platform totals are in the Overview tab; per-startup analytics live on each startup&apos;s Analytics page.
+          </UnavailableNotice>
         </Card>
       )}
 
-      {/* 7. NOTIFICATIONS BROADCAST SECTION -- no broadcast/system-wide
-          notification endpoint exists (Notification model is per-user,
-          created by specific actions, not admin-broadcast). */}
+      {/* 7. NOTIFICATIONS BROADCAST SECTION -- no broadcast endpoint exists
+          (Notification model is per-user, created by specific actions). */}
       {activeSection === 'notifications' && (
         <Card className="p-6 border-slate-200/80 space-y-4">
-          <DemoDataNotice />
           <h3 className="text-lg font-bold text-slate-900">System Announcement Broadcast</h3>
-          <p className="text-xs text-slate-500">Broadcast notification message to all 18,420 registered users.</p>
-
-          <form onSubmit={handleBroadcastNotification} className="space-y-4 max-w-xl pt-2">
-            <textarea
-              rows={4}
-              value={broadcastMessage}
-              onChange={(e) => setBroadcastMessage(e.target.value)}
-              placeholder="e.g. TrustNet v2.4 Release: Live Pitch Bookings are now open!"
-              className="w-full bg-slate-50/80 border border-slate-200 rounded-xl p-3 text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none"
-            />
-            <Button type="submit" variant="primary">
-              <Bell className="w-4 h-4" strokeWidth={1.75} />
-              <span>Broadcast Message</span>
-            </Button>
-          </form>
+          <UnavailableNotice>
+            The Notification model is per-user and created by specific actions; there is no admin broadcast endpoint to send a platform-wide announcement.
+          </UnavailableNotice>
         </Card>
       )}
 
-      {/* 8. SETTINGS SECTION -- no roles/permissions-editor, audit-log, or
-          system-health endpoint exists on the backend. */}
+      {/* 8. SETTINGS SECTION -- only the Audit Logs sub-tab has a backend
+          (GET /admin/activity-logs). Roles editor / platform settings /
+          system health have no route. */}
       {activeSection === 'settings' && (
         <div className="space-y-6">
-          <DemoDataNotice />
           <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto">
             {[
+              { id: 'audit-logs', label: 'Audit Logs' },
               { id: 'roles-permissions', label: 'Roles & Permissions' },
               { id: 'platform-settings', label: 'Platform Settings' },
-              { id: 'audit-logs', label: 'Audit Logs' },
               { id: 'system-health', label: 'System Health' }
-            ].map(sub => (
+            ].map((sub) => (
               <button
                 key={sub.id}
                 onClick={() => setSettingsSubTab(sub.id)}
@@ -643,20 +796,60 @@ export const AdminDashboardPage = () => {
             ))}
           </div>
 
-          <Card className="p-6 border-slate-200/80 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900 capitalize">{settingsSubTab.replace('-', ' ')}</h3>
-            <p className="text-xs text-slate-500">Configure system parameters, RBAC roles, security logs, and latency monitoring.</p>
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-700 space-y-2">
-              <div className="flex justify-between">
-                <span>Database Response Time</span>
-                <strong className="text-emerald-600">14ms</strong>
+          {settingsSubTab === 'audit-logs' && (
+            <Card className="p-6 border-slate-200/80 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Audit Logs</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Every admin mutation is recorded server-side. Most recent first.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={loadLogs} disabled={logsLoading}>
+                  <RefreshCw className={`w-3.5 h-3.5 ${logsLoading ? 'animate-spin' : ''}`} strokeWidth={1.75} />
+                </Button>
               </div>
-              <div className="flex justify-between">
-                <span>API Gateway Latency</span>
-                <strong className="text-emerald-600">22ms</strong>
-              </div>
-            </div>
-          </Card>
+
+              {logsLoading && <div className="p-6 text-center text-xs text-slate-500">Loading audit logs…</div>}
+
+              {!logsLoading && logsError && (
+                <div className="p-4 bg-rose-50 text-rose-600 rounded-xl border border-rose-200 text-xs font-medium flex items-center justify-between gap-3">
+                  <span>{logsError}</span>
+                  <button type="button" onClick={loadLogs} className="font-semibold hover:underline shrink-0">Retry</button>
+                </div>
+              )}
+
+              {!logsLoading && !logsError && logsList.length === 0 && (
+                <div className="p-6 text-center text-xs text-slate-500">No audit entries recorded yet.</div>
+              )}
+
+              {!logsLoading && !logsError && logsList.length > 0 && (
+                <div className="divide-y divide-slate-100">
+                  {logsList.map((log) => (
+                    <div key={log._id} className="py-3 flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">{log.action}</p>
+                        <p className="text-[11px] text-slate-500">
+                          {log.actor?.fullName || 'System'} ({log.actor?.role || 'n/a'}) • {log.targetType || 'n/a'}
+                          {log.targetId ? ` #${String(log.targetId).slice(-6)}` : ''}
+                        </p>
+                      </div>
+                      <span className="text-[11px] text-slate-400 shrink-0">
+                        {log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {settingsSubTab !== 'audit-logs' && (
+            <Card className="p-6 border-slate-200/80 space-y-4">
+              <h3 className="text-lg font-bold text-slate-900 capitalize">{settingsSubTab.replace('-', ' ')}</h3>
+              <UnavailableNotice>
+                No backend endpoint exists for this configuration area yet.
+              </UnavailableNotice>
+            </Card>
+          )}
         </div>
       )}
     </div>
